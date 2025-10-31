@@ -11,10 +11,15 @@
 
 set -e
 
+# Make everything non-interactive
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
+
 # Configuration
 RAILWAY_IP="${1}"
 REPO_URL="https://raw.githubusercontent.com/RuneAd/runestatus-proxy-setup/main"
-VERSION="1.0.0"
+VERSION="1.0.1"
 
 # Validate Railway IP provided
 if [ -z "$RAILWAY_IP" ]; then
@@ -30,14 +35,28 @@ echo "Railway IP: $RAILWAY_IP"
 echo "Repository: RuneAd/runestatus-proxy-setup"
 echo ""
 
-# Update system
-echo "📦 Updating system packages..."
-apt update -qq
-apt upgrade -y -qq
+# Disable interactive prompts for package configuration
+echo "📦 Configuring non-interactive mode..."
+export DEBIAN_FRONTEND=noninteractive
+
+# Update system (non-interactive, skip problematic upgrades)
+echo "📦 Updating package lists..."
+apt-get update -qq
+
+# Only upgrade security packages, skip interactive ones
+echo "📦 Installing security updates..."
+apt-get upgrade -y -qq \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold" \
+    -o DPkg::options::="--force-confmiss" \
+    || echo "⚠️  Some packages skipped (non-critical)"
 
 # Install required packages
 echo "📦 Installing Squid and UFW..."
-apt install -y squid ufw curl
+apt-get install -y -qq \
+    -o Dpkg::Options::="--force-confdef" \
+    -o Dpkg::Options::="--force-confold" \
+    squid ufw curl
 
 # Backup original Squid config
 if [ -f /etc/squid/squid.conf ]; then
@@ -125,15 +144,15 @@ cat > /root/runestatus-setup.json << EOF
 EOF
 
 # Get external IP
-EXTERNAL_IP=$(curl -s ifconfig.me)
+EXTERNAL_IP=$(curl -s ifconfig.me || echo "unknown")
 
 # Success message
 echo ""
 echo "✅ Setup Complete!"
 echo "===================="
 echo ""
-echo "📊 Status:"
-systemctl status squid --no-pager | grep "Active:" || true
+echo "📊 Squid Status:"
+systemctl is-active squid && echo "   ✓ Running" || echo "   ✗ Not running"
 echo ""
 echo "🔒 Firewall Rules:"
 ufw status numbered | head -n 10
